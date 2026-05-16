@@ -70,23 +70,3 @@ Generate ONLY the review text, no metadata, no ratings, no markdown formatting.`
 		userPrompt,
 	)
 }
-
-// boolToString converts a boolean to "use " or "don't use ".
-func boolToString(b bool) string {
-	if b {
-		return "uses "
-	}
-	return "doesn't use "
-}
-
-// formatTopicPreferences formats topic preferences for display in prompt.
-func formatTopicPreferences(prefs []TopicPreference) string {
-	if len(prefs) == 0 {
-		return "None identified"
-	}
-	var parts []string
-	for _, p := range prefs {
-		parts = append(parts, fmt.Sprintf("%s (%s, mentioned %d times)", p.Topic, p.Sentiment, p.Frequency))
-	}
-	return strings.Join(parts, "; ")
-}

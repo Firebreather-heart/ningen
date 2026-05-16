@@ -171,7 +171,7 @@ func localCheckForAISpeak(text string) string {
 	// Common AI red flags
 	redFlags := []string{
 		"delve", "tapestry", "curate", "elevate",
-		"journey", "seamless", "elevate", "paradigm",
+		"journey", "seamless", "paradigm",
 		"game-changer", "must-have", "can't-miss",
 		"unlock", "transform", "revolutionize",
 	}
