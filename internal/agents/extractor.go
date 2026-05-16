@@ -29,13 +29,23 @@ Rules:
 - search_queries must be exactly 2 specific natural-language phrases suited for semantic search over
   review text. Make them diverse: one literal/specific, one thematic/conceptual. Do NOT copy the
   user's exact words — distill their underlying intent.
+- If corpus examples are provided, calibrate search_queries to match the vocabulary and style of
+  what is actually available — do not generate queries for items unlikely to exist in that corpus.
 - If the history is too ambiguous to produce useful search queries, set clarify_needed=true and write
   a single open clarifying question in clarify_reason. Leave search_queries as [].
 - constraints captures hard requirements: dietary restrictions, genre exclusions, budget signals, etc.
 - Output valid JSON only. No trailing commas. No comments.`
 
+// CorpusExample is a representative item sampled from the live corpus before extraction.
+// Feeding these to the Extractor grounds its search_queries in what actually exists.
+type CorpusExample struct {
+	Domain     string
+	SearchText string
+}
+
 // Extractor is Stage 1 of the SIGNAL pipeline.
-// It converts raw persona + history into a structured UserSignal via a single LLM call.
+// It converts raw persona + history into a structured UserSignal.
+// When examples are provided (from a pre-search), it calibrates queries to the live corpus.
 type Extractor struct {
 	provider llm.LLMProvider
 }
@@ -45,10 +55,12 @@ func NewExtractor(p llm.LLMProvider) *Extractor {
 }
 
 // Extract produces a UserSignal from the user's persona and conversation history.
-func (e *Extractor) Extract(ctx context.Context, persona string, history []models.ConversationTurn) (*models.UserSignal, error) {
+// examples should be a small sample of items retrieved from a raw embedding pre-search;
+// pass nil to skip corpus grounding (e.g. in tests or when embedder is unavailable).
+func (e *Extractor) Extract(ctx context.Context, persona string, history []models.ConversationTurn, examples []CorpusExample) (*models.UserSignal, error) {
 	messages := []llm.Message{
 		{Role: "system", Content: extractorSystem},
-		{Role: "user", Content: buildExtractionPrompt(persona, history)},
+		{Role: "user", Content: buildExtractionPrompt(persona, history, examples)},
 	}
 
 	raw, err := e.provider.Complete(ctx, messages)
@@ -68,7 +80,7 @@ func (e *Extractor) Extract(ctx context.Context, persona string, history []model
 	return &signal, nil
 }
 
-func buildExtractionPrompt(persona string, history []models.ConversationTurn) string {
+func buildExtractionPrompt(persona string, history []models.ConversationTurn, examples []CorpusExample) string {
 	var sb strings.Builder
 	sb.WriteString("Persona: ")
 	sb.WriteString(persona)
@@ -79,6 +91,18 @@ func buildExtractionPrompt(persona string, history []models.ConversationTurn) st
 		sb.WriteString(t.Content)
 		sb.WriteByte('\n')
 	}
+
+	if len(examples) > 0 {
+		sb.WriteString("\nExample items currently available in the corpus (calibrate your search_queries to match this vocabulary and content style):\n")
+		for i, ex := range examples {
+			text := ex.SearchText
+			if len(text) > 150 {
+				text = text[:150]
+			}
+			fmt.Fprintf(&sb, "%d. [%s] %s\n", i+1, ex.Domain, text)
+		}
+	}
+
 	return sb.String()
 }
 

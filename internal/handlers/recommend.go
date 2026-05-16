@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"ningen/internal/agents"
 	"ningen/internal/models"
@@ -12,6 +13,8 @@ import (
 const (
 	defaultRecommendLimit = 10
 	candidatePoolSize     = 50
+	agentTimeout          = 25 * time.Second
+	fallbackClarifyQ      = "Could you tell me more — are you looking for a book, a product, or a place to eat? What mood are you in?"
 )
 
 // RecommendHandler serves POST /recommend.
@@ -52,12 +55,21 @@ func RecommendHandler(d *Deps) http.HandlerFunc {
 		}
 
 		limit := req.Limit
-		if limit <= 0 || limit > 50 {
+		if limit <= 0 {
 			limit = defaultRecommendLimit
+		} else if limit > candidatePoolSize {
+			limit = candidatePoolSize
 		}
 
-		// Stage 1 — Signal Extraction
-		signal, err := agents.NewExtractor(provider).Extract(ctx, req.UserPersona, req.History)
+		// Pre-search: embed the raw last user turn to sample corpus examples.
+		// These ground the Extractor in what actually exists in the DB before it
+		// generates search queries, preventing queries for items that don't exist.
+		corpusExamples := sampleCorpus(ctx, d, req.History)
+
+		// Stage 1 — Signal Extraction (corpus-aware)
+		extractCtx, extractCancel := context.WithTimeout(ctx, agentTimeout)
+		signal, err := agents.NewExtractor(provider).Extract(extractCtx, req.UserPersona, req.History, corpusExamples)
+		extractCancel()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "signal extraction failed: "+err.Error())
 			return
@@ -65,6 +77,9 @@ func RecommendHandler(d *Deps) http.HandlerFunc {
 
 		if signal.ClarifyNeeded {
 			question := signal.ClarifyReason
+			if question == "" {
+				question = fallbackClarifyQ
+			}
 			if h, err := provider.Humanize(ctx, question, req.UserPersona); err == nil {
 				question = h
 			}
@@ -80,11 +95,16 @@ func RecommendHandler(d *Deps) http.HandlerFunc {
 		}
 
 		// Stage 3 — Quality Gate
-		gateResult, err := agents.NewGate(provider).Evaluate(ctx, signal, candidates)
+		gateCtx, gateCancel := context.WithTimeout(ctx, agentTimeout)
+		gateResult, err := agents.NewGate(provider).Evaluate(gateCtx, signal, candidates)
+		gateCancel()
 		if err == nil {
 			switch gateResult.Decision {
 			case agents.GateAsk:
 				question := gateResult.Question
+				if question == "" {
+					question = fallbackClarifyQ
+				}
 				if h, err := provider.Humanize(ctx, question, req.UserPersona); err == nil {
 					question = h
 				}
@@ -101,7 +121,9 @@ func RecommendHandler(d *Deps) http.HandlerFunc {
 		}
 
 		// Stage 4 — Psychographic Reranking
-		ranked, err := agents.NewReranker(provider).Rank(ctx, signal, candidates, req.CrossDomain)
+		rankCtx, rankCancel := context.WithTimeout(ctx, agentTimeout)
+		ranked, err := agents.NewReranker(provider).Rank(rankCtx, signal, candidates, req.CrossDomain)
+		rankCancel()
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "reranking failed: "+err.Error())
 			return
@@ -149,6 +171,35 @@ func retrieveBySignal(ctx context.Context, d *Deps, signal *models.UserSignal, p
 	}
 
 	return deduplicateByText(results), nil
+}
+
+// sampleCorpus embeds the last user turn and retrieves 5 representative items from the DB.
+// These are fed to the Extractor so it can calibrate search_queries to what actually exists.
+// Failures are non-fatal — returns nil and the Extractor proceeds without corpus grounding.
+func sampleCorpus(ctx context.Context, d *Deps, history []models.ConversationTurn) []agents.CorpusExample {
+	query := ""
+	for i := len(history) - 1; i >= 0; i-- {
+		if history[i].Role == "user" {
+			query = history[i].Content
+			break
+		}
+	}
+	if query == "" {
+		return nil
+	}
+	vec, err := d.Embed.Embed(ctx, query)
+	if err != nil || len(vec) == 0 {
+		return nil
+	}
+	samples, err := d.Vector.Search(ctx, vec, 5, nil)
+	if err != nil || len(samples) == 0 {
+		return nil
+	}
+	examples := make([]agents.CorpusExample, len(samples))
+	for i, s := range samples {
+		examples[i] = agents.CorpusExample{Domain: s.Domain, SearchText: s.SearchText}
+	}
+	return examples
 }
 
 // deduplicateByText removes results with identical search_text, keeping the best-scored copy.

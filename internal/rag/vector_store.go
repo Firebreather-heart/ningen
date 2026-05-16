@@ -118,9 +118,11 @@ func (vs *VectorStore) SearchByText(ctx context.Context, query string, limit int
 // The returned slice is sorted ascending by score and capped at limit.
 func (vs *VectorStore) SearchByVectors(ctx context.Context, vecs [][]float32, limit int) ([]Result, error) {
 	seen := make(map[string]Result)
+	var lastErr error
 	for _, vec := range vecs {
 		results, err := vs.Search(ctx, vec, limit, nil)
 		if err != nil {
+			lastErr = err
 			continue
 		}
 		for _, r := range results {
@@ -128,6 +130,9 @@ func (vs *VectorStore) SearchByVectors(ctx context.Context, vecs [][]float32, li
 				seen[r.ItemID] = r
 			}
 		}
+	}
+	if len(seen) == 0 && lastErr != nil {
+		return nil, lastErr
 	}
 
 	merged := make([]Result, 0, len(seen))

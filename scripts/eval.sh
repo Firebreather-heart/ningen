@@ -39,7 +39,7 @@ call() {
 
   http_code=$(echo "$response" | tail -1)
   local body_only
-  body_only=$(echo "$response" | head -n -1)
+  body_only=$(echo "$response" | sed '$d')
 
   if [[ "$http_code" != "200" ]]; then
     fail "$label → HTTP $http_code (${elapsed}ms)"
@@ -47,17 +47,19 @@ call() {
     return
   fi
 
-  local value
-  value=$(echo "$body_only" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('$expected',''))" 2>/dev/null) || value=""
+  local value items reasoning
+  value=$(echo "$body_only" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('$expected',''))" 2>/dev/null)
+  [[ $? -ne 0 ]] && value=""
 
   if [[ -z "$value" || "$value" == "False" || "$value" == "[]" || "$value" == "None" ]]; then
     fail "$label → '$expected' missing or empty (${elapsed}ms)"
-    echo "$body_only" | python3 -m json.tool 2>/dev/null | head -20 | sed 's/^/    /' || echo "    $body_only" | head -5
+    echo "$body_only" | python3 -m json.tool 2>/dev/null | head -20 | sed 's/^/    /'
   else
     pass "$label (${elapsed}ms)"
-    local items reasoning
-    items=$(echo "$body_only" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('recommendations',[])))" 2>/dev/null) || items="?"
-    reasoning=$(echo "$body_only" | python3 -c "import sys,json; d=json.load(sys.stdin); r=d.get('reasoning',''); print(r[:120]+'...' if len(r)>120 else r)" 2>/dev/null) || reasoning=""
+    items=$(echo "$body_only" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('recommendations',[])))" 2>/dev/null)
+    [[ $? -ne 0 ]] && items="?"
+    reasoning=$(echo "$body_only" | python3 -c "import sys,json; d=json.load(sys.stdin); r=d.get('reasoning',''); print(r[:120]+'...' if len(r)>120 else r)" 2>/dev/null)
+    [[ $? -ne 0 ]] && reasoning=""
     [[ -n "$items" && "$items" != "0" ]] && info "items returned: $items"
     [[ -n "$reasoning" ]] && info "reasoning: $reasoning"
   fi
@@ -147,8 +149,10 @@ resp=$(curl -s -X POST "$BASE/recommend" \
     \"provider\": \"$PROVIDER\"
   }")
 
-has_recs=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(bool(d.get('recommendations')))" 2>/dev/null) || has_recs="False"
-has_q=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(bool(d.get('requires_input')))" 2>/dev/null) || has_q="False"
+has_recs=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(bool(d.get('recommendations')))" 2>/dev/null)
+[[ $? -ne 0 ]] && has_recs="False"
+has_q=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(bool(d.get('requires_input')))" 2>/dev/null)
+[[ $? -ne 0 ]] && has_q="False"
 
 if [[ "$has_recs" == "True" || "$has_q" == "True" ]]; then
   pass "Ambiguous intent handled (got recs or clarifying question)"
