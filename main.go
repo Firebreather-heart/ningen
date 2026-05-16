@@ -16,9 +16,8 @@ import (
 )
 
 const (
-	targetItemCount = 100_000
-	batchSize       = 5_000
-	workerCount     = 10
+	batchSize   = 5_000
+	workerCount = 10
 )
 
 func main() {
@@ -44,6 +43,8 @@ func run(ctx context.Context) error {
 	if dbURL == "" {
 		dbURL = "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"
 	}
+
+	targetItemCount := envInt("TARGET_ITEM_COUNT", 100_000)
 
 	log.Println("Initializing Postgres storage...")
 	db, err := store.NewPostgresStore(ctx, dbURL)
@@ -231,6 +232,16 @@ func run(ctx context.Context) error {
 
 	log.Println("ETL Pipeline completed successfully.")
 	return nil
+}
+
+func envInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		var n int
+		if _, err := fmt.Sscan(v, &n); err == nil && n > 0 {
+			return n
+		}
+	}
+	return fallback
 }
 
 // truncateText cuts s to at most maxBytes bytes on a valid UTF-8 boundary.
