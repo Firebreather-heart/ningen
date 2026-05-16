@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"ningen/embed"
 	"ningen/internal/handlers"
 	"ningen/internal/llm"
 	"ningen/internal/rag"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -59,6 +59,7 @@ func run(ctx context.Context) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /recommend", handlers.RecommendHandler(deps))
+	mux.HandleFunc("POST /generate-review", handlers.GenerateReviewHandler(deps))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
