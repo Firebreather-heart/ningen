@@ -206,9 +206,9 @@ ningen/
 │
 ├── ingest/
 │   ├── source.go            # Source interface
-│   ├── yelp.go              # Yelp CSV streamer
 │   ├── amazon.go            # Amazon gzipped JSONL streamer
-│   └── goodreads.go         # Goodreads CSV streamer
+│   ├── goodreads.go         # Goodreads CSV streamer
+│   └── yelp.go              # Yelp CSV streamer (unused — URL defunct)
 │
 ├── embed/
 │   └── embedder.go          # HTTP client for the ONNX sidecar
@@ -242,13 +242,13 @@ ningen/
 The pipeline runs once and exits. Data is streamed directly from source URLs — no large files written to disk.
 
 **Sources (in order):**
-1. Yelp Review Full — CSV (label, review text)
-2. Amazon All Beauty — gzipped JSONL (rating, review text)
-3. Goodreads Book Reviews — CSV (rating, review text)
+1. Amazon Electronics — gzipped JSONL (~1.7M reviews)
+2. Amazon Books — gzipped JSONL (~8M reviews, overflow if Electronics runs short)
+3. Goodreads Book Reviews — CSV (cross-domain diversity)
 
 **Architecture:** 10 embedding worker goroutines running in parallel, feeding a single writer goroutine that batches 5,000 items per `COPY FROM` call.
 
-**Target:** 100,000 items. The HNSW index (`vector_cosine_ops`) is created after all inserts to avoid write amplification during bulk load.
+**Target:** Configurable via `TARGET_ITEM_COUNT` env var (default: `100000`). Set to `25000` for a quick evaluation run (~8 min). The HNSW index (`vector_cosine_ops`) is created after all inserts to avoid write amplification during bulk load.
 
 **Resume behavior:** On restart, the pipeline counts existing DB rows and skips that many items from the beginning of the source stream before continuing. Safe to interrupt and resume.
 
