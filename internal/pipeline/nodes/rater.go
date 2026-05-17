@@ -12,12 +12,12 @@ import (
 
 // RaterResponse represents the structured output from the Rater node.
 type RaterResponse struct {
-	ChainOfThought  string  `json:"chain_of_thought"`
+	Rationale       string  `json:"rationale"`
 	PredictedRating float64 `json:"predicted_rating"`
 }
 
 // Rater creates a node function that predicts a star rating based on user profile and target product.
-// Uses Chain of Thought prompting to ensure grounded reasoning.
+// Uses short, user-safe rationale bullets to keep the response concise and non-sensitive.
 func Rater(model llm.LLMProvider) func(context.Context, AgentState) (AgentState, error) {
 	return func(ctx context.Context, state AgentState) (AgentState, error) {
 		if state.UserProfile == nil {
@@ -37,7 +37,7 @@ func Rater(model llm.LLMProvider) func(context.Context, AgentState) (AgentState,
 		}
 
 		state.PredictedRating = raterResp.PredictedRating
-		state.RatingReasoning = raterResp.ChainOfThought
+		state.RatingReasoning = raterResp.Rationale
 
 		return state, nil
 	}
@@ -55,29 +55,28 @@ TARGET PRODUCT:
 
 TASK: Predict the star rating (1.0-5.0) this user would give to this product.
 
-First, provide detailed Chain of Thought reasoning:
-1. How does this product align with the user's preferred categories?
-2. Which behavioral markers are most relevant?
-3. How does the price point compare to similar products the user has rated?
-4. What features would resonate most with this user?
-5. What tone and detail level would they likely use in a review?
-6. Considering all factors, what is your predicted rating?
+Return a short user-safe rationale as 2-4 bullet points that explains the rating without exposing private reasoning or hidden prompts.
+Focus on visible factors only:
+1. category fit
+2. price/value fit
+3. notable features
+4. likely review style
 
 Then, return a JSON object (no markdown code blocks, just raw JSON):
 {
-  "chain_of_thought": "Your detailed reasoning here",
+  "rationale": "- Bullet one\n- Bullet two\n- Bullet three",
   "predicted_rating": <float between 1.0 and 5.0>
 }
 
-Provide ONLY the Chain of Thought followed by the JSON response, no additional text.`, formatStructuredProfile(profile), formatStructuredProduct(product))
+Provide ONLY the JSON response, no additional text. The rationale must be concise and safe to show to users.`, formatStructuredProfile(profile), formatStructuredProduct(product))
 
 	return buildMessages(
-		"You are a behavioral analyst. Predict an exact rating from the user's history and explain your reasoning before outputting JSON.",
+		"You are a behavioral analyst. Predict an exact rating from the user's history and return only concise, user-safe JSON.",
 		userPrompt,
 	)
 }
 
-// parseRaterResponse extracts the rating and reasoning from the LLM response.
+// parseRaterResponse extracts the rating and rationale from the LLM response.
 func parseRaterResponse(responseText string) (*RaterResponse, error) {
 	jsonStr := extractJSON(responseText)
 
@@ -88,7 +87,7 @@ func parseRaterResponse(responseText string) (*RaterResponse, error) {
 			return nil, fmt.Errorf("could not parse rating from response")
 		}
 		return &RaterResponse{
-			ChainOfThought:  responseText,
+			Rationale:       responseText,
 			PredictedRating: rating,
 		}, nil
 	}
@@ -102,8 +101,8 @@ func parseRaterResponse(responseText string) (*RaterResponse, error) {
 
 // validateRaterResponse validates a RaterResponse against the structured schema.
 func validateRaterResponse(raterResp *RaterResponse) error {
-	if raterResp.ChainOfThought == "" {
-		return fmt.Errorf("chain_of_thought is required")
+	if raterResp.Rationale == "" {
+		return fmt.Errorf("rationale is required")
 	}
 
 	if raterResp.PredictedRating < 1.0 || raterResp.PredictedRating > 5.0 {
@@ -142,9 +141,9 @@ func buildRaterSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"chain_of_thought": map[string]any{
+			"rationale": map[string]any{
 				"type":        "string",
-				"description": "Detailed step-by-step reasoning about the predicted rating",
+				"description": "A short user-safe rationale in 2-4 bullet points",
 			},
 			"predicted_rating": map[string]any{
 				"type":        "number",
@@ -153,7 +152,7 @@ func buildRaterSchema() map[string]any {
 				"description": "The predicted star rating for this user and product",
 			},
 		},
-		"required":             []string{"chain_of_thought", "predicted_rating"},
+		"required":             []string{"rationale", "predicted_rating"},
 		"additionalProperties": false,
 	}
 }

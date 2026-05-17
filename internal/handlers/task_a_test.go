@@ -36,7 +36,7 @@ func TestGenerateReviewHandler_EndToEnd(t *testing.T) {
 	model := &fakeReviewModel{
 		responses: []string{
 			`{"user_id":"u-1","overall_tendency":"balanced","average_rating":3.8,"preferred_categories":["electronics"],"review_style":{"detail_level":"moderate","use_emotional_lang":false,"use_tech_language":true,"comparison_frequency":"occasional"},"behavioral_markers":[{"marker":"price_conscious","frequency":"frequent","confidence":0.92,"description":"Watches price carefully"}],"tone_profile":{"cheerfulness":0.4,"sarcasm":0.1,"urgency":0.2,"formality":0.5},"rating_patterns":{"ratings_distribution":{"3":2,"4":3},"rating_thresholds":{"high_satisfaction":4.5,"acceptable":3.0}},"topic_preferences":[{"topic":"battery life","sentiment":"positive","frequency":4,"importance":"high"}],"review_length":{"average_length":72,"min_length":40,"max_length":120}}`,
-			`{"chain_of_thought":"This product fits the user's preferences well.","predicted_rating":4.2}`,
+			`{"rationale":"- Fits the user's preferences well.\n- The price and category are a reasonable match.","predicted_rating":4.2}`,
 			"First draft review with a bit too much AI polish.",
 			`{"verdict":"FAIL","feedback":"Make it sound more like a real person and remove AI phrasing."}`,
 			"Revised review that sounds more natural and direct.",
@@ -115,7 +115,7 @@ func TestGenerateReviewHandler_EndToEnd(t *testing.T) {
 	if math.Abs(resp.PredictedRating-4.2) > 1e-9 {
 		t.Fatalf("unexpected rating: %v", resp.PredictedRating)
 	}
-	if resp.RatingReasoning != "This product fits the user's preferences well." {
+	if resp.RatingReasoning != "- Fits the user's preferences well.\n- The price and category are a reasonable match." {
 		t.Fatalf("unexpected reasoning: %q", resp.RatingReasoning)
 	}
 	if resp.UserProfile == nil {
