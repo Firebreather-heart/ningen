@@ -115,11 +115,193 @@ func TestGenerateReviewHandler_EndToEnd(t *testing.T) {
 	if math.Abs(resp.PredictedRating-4.2) > 1e-9 {
 		t.Fatalf("unexpected rating: %v", resp.PredictedRating)
 	}
-	if resp.Iterations != 2 {
-		t.Fatalf("unexpected iterations: %d", resp.Iterations)
+	if resp.IterationsUsed != 2 {
+		t.Fatalf("unexpected iterations: %d", resp.IterationsUsed)
+	}
+	if resp.CriticVerdict != "PASS" {
+		t.Fatalf("unexpected verdict: %s", resp.CriticVerdict)
+	}
+	// ExecutionTiming is present (may be 0 or > 0 depending on system speed)
+	if resp.ExecutionTiming.DrafterMs < 0 || resp.ExecutionTiming.CriticMs < 0 {
+		t.Fatalf("unexpected timing: %+v", resp.ExecutionTiming)
 	}
 
 	if model.calls != 6 {
 		t.Fatalf("unexpected model calls: got %d, want 6", model.calls)
+	}
+}
+
+func TestGenerateReviewHandler_InvalidStarRating(t *testing.T) {
+	model := &fakeReviewModel{
+		responses: []string{},
+	}
+
+	deps := &Deps{
+		LLM: llm.Registry{
+			"kimi": model,
+		},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /generate-review", GenerateReviewHandler(deps))
+
+	payload := GenerateReviewRequest{
+		UserHistory: []ReviewHistoryEntry{
+			{
+				ProductID:       "h1",
+				ProductName:     "Product 1",
+				ProductCategory: "category",
+				StarRating:      6.0, // Invalid: > 5.0
+				ReviewText:      "Some review",
+				ReviewDate:      "2026-05-01",
+				Source:          "amazon",
+			},
+			{
+				ProductID:       "h2",
+				ProductName:     "Product 2",
+				ProductCategory: "category",
+				StarRating:      4.0,
+				ReviewText:      "Another review",
+				ReviewDate:      "2026-05-02",
+				Source:          "amazon",
+			},
+		},
+		TargetProduct: ReviewTargetProduct{
+			ProductID:       "t1",
+			ProductName:     "Target",
+			ProductCategory: "category",
+		},
+		Provider: "kimi",
+	}
+
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/generate-review", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+
+	body = rec.Body.Bytes()
+	if !bytes.Contains(body, []byte("star_rating must be between 1.0 and 5.0")) {
+		t.Fatalf("unexpected error message: %s", string(body))
+	}
+}
+
+func TestGenerateReviewHandler_InsufficientHistory(t *testing.T) {
+	model := &fakeReviewModel{
+		responses: []string{},
+	}
+
+	deps := &Deps{
+		LLM: llm.Registry{
+			"kimi": model,
+		},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /generate-review", GenerateReviewHandler(deps))
+
+	payload := GenerateReviewRequest{
+		UserHistory: []ReviewHistoryEntry{
+			{
+				ProductID:       "h1",
+				ProductName:     "Product 1",
+				ProductCategory: "category",
+				StarRating:      4.0,
+				ReviewText:      "Some review",
+				ReviewDate:      "2026-05-01",
+				Source:          "amazon",
+			},
+			// Only 1 item, need at least 2
+		},
+		TargetProduct: ReviewTargetProduct{
+			ProductID:       "t1",
+			ProductName:     "Target",
+			ProductCategory: "category",
+		},
+		Provider: "kimi",
+	}
+
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/generate-review", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+
+	body = rec.Body.Bytes()
+	if !bytes.Contains(body, []byte("at least 2 prior reviews")) {
+		t.Fatalf("unexpected error message: %s", string(body))
+	}
+}
+
+func TestGenerateReviewHandler_UnavailableProvider(t *testing.T) {
+	model := &fakeReviewModel{
+		responses: []string{},
+	}
+
+	deps := &Deps{
+		LLM: llm.Registry{
+			"kimi": model,
+		},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /generate-review", GenerateReviewHandler(deps))
+
+	payload := GenerateReviewRequest{
+		UserHistory: []ReviewHistoryEntry{
+			{
+				ProductID:       "h1",
+				ProductName:     "Product 1",
+				ProductCategory: "category",
+				StarRating:      4.0,
+				ReviewText:      "Some review",
+				ReviewDate:      "2026-05-01",
+				Source:          "amazon",
+			},
+			{
+				ProductID:       "h2",
+				ProductName:     "Product 2",
+				ProductCategory: "category",
+				StarRating:      3.5,
+				ReviewText:      "Another review",
+				ReviewDate:      "2026-05-02",
+				Source:          "amazon",
+			},
+		},
+		TargetProduct: ReviewTargetProduct{
+			ProductID:       "t1",
+			ProductName:     "Target",
+			ProductCategory: "category",
+		},
+		Provider: "nonexistent_provider",
+	}
+
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/generate-review", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", rec.Code)
+	}
+
+	body = rec.Body.Bytes()
+	if !bytes.Contains(body, []byte("requested provider not available")) {
+		t.Fatalf("unexpected error message: %s", string(body))
+	}
+	if !bytes.Contains(body, []byte("available_providers")) {
+		t.Fatalf("expected available_providers in error details: %s", string(body))
 	}
 }
