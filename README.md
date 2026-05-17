@@ -266,8 +266,9 @@ Given a user's historical reviews and a target product, the system predicts:
 
 - A **rating** (float from 1.0 to 5.0)
 - A **generated review** aligned with the user's inferred style
-- A **rating reasoning** trace from the rater node
-- The inferred **user profile** used by downstream steps
+- A **critic verdict** showing whether the draft passed the fidelity check
+- The **number of iterations** the critic/drafter loop used
+- Per-node **execution timing** for profiling, rating, drafting, and critique
 
 ### Endpoint
 
@@ -327,6 +328,8 @@ mux.HandleFunc("POST /generate-review", handlers.GenerateReviewHandler(deps))
 }
 ```
 
+`provider` is optional and defaults to `openai`. If the requested provider is not available in the current environment, the handler returns `400` with the list of available providers.
+
 **Optional per-node model overrides:**
 
 The `model_overrides` field (optional) allows specifying different LLM models for each pipeline node:
@@ -340,8 +343,12 @@ If a node is omitted or the entire `model_overrides` field is absent, the provid
 
 Validation rules currently enforced in handler:
 
-- `user_history` must be non-empty
+- `user_history` must contain at least 2 prior reviews and at most 50
+- every history item must include `product_id`, `review_text`, and a `star_rating` between 1.0 and 5.0
 - `target_product.product_id` is required
+- `target_product.price` cannot be negative
+- `target_product.rating` must be between 0.0 and 5.0
+- `target_product.review_count` cannot be negative
 - `provider` defaults to `openai` if omitted
 - unknown/unavailable provider returns `400`
 - `model_overrides` is optional; if provided, model names must be valid for the provider
@@ -352,16 +359,18 @@ Validation rules currently enforced in handler:
 {
   "generated_review": "Revised review that sounds more natural and direct.",
   "predicted_rating": 4.2,
-  "rating_reasoning": "This product fits the user's preferences well.",
-  "user_profile": {
-    "user_id": "u-1",
-    "overall_tendency": "balanced",
-    "average_rating": 3.8,
-    "preferred_categories": ["electronics"]
-  },
-  "iterations": 2
+  "critic_verdict": "PASS",
+  "iterations_used": 2,
+  "execution_timing": {
+    "profiler_ms": 42,
+    "rater_ms": 38,
+    "drafter_ms": 51,
+    "critic_ms": 47
+  }
 }
 ```
+
+`critic_verdict` is either `PASS` or `MAX_ITERATIONS`. The handler returns the latest draft as `generated_review` and the final predicted rating as `predicted_rating`.
 
 ### Architecture: Implemented Pipeline
 
@@ -378,8 +387,7 @@ POST /generate-review
               │
               ▼
 ┌──────────────────────────────┐
-│ Agent 2: Rater               │ Predicts rating + chain_of_thought
-│                              │ (parsed to rating_reasoning)
+│ Agent 2: Rater               │ Predicts rating and stores reasoning
 └─────────────┬────────────────┘
               │
               ▼
@@ -390,13 +398,13 @@ POST /generate-review
               │
               ▼
 ┌──────────────────────────────┐
-│ Agent 4: Critic             │ PASS/FAIL behavioral fidelity check
+│ Agent 4: Critic              │ PASS/FAIL behavioral fidelity check
 │                              │ with revision loop
 └─────────────┬────────────────┘
               │
               ▼
 Return response with generated_review, predicted_rating,
-rating_reasoning, user_profile, iterations
+critic_verdict, iterations_used, execution_timing
 ```
 
 Critic loop details:
@@ -404,7 +412,8 @@ Critic loop details:
 - max 2 draft/critic iterations (`maxLoops = 2`)
 - if critic returns `PASS`, current draft becomes `final_review`
 - if loop cap is reached, latest draft is returned
-- local fallback checks reject common AI-sounding phrasing when critic parsing fails
+- local fallback checks reject common AI-sounding phrasing before the LLM critic runs
+- the HTTP handler enforces a 90 second workflow timeout
 
 ### Implementation Notes
 
@@ -418,7 +427,8 @@ Task A implementation currently lives in:
 Notes on current behavior:
 
 - Task A request/response structs are defined in handler/pipeline packages, not in [internal/models/schemas.go](internal/models/schemas.go).
-- Task A currently uses provider `Complete` calls in pipeline nodes; it does not run a final `Humanize` pass like Task B.
+- Task A uses provider `Complete` calls in pipeline nodes; it does not run a final `Humanize` pass like Task B.
+- The handler surfaces `critic_verdict`, `iterations_used`, and `execution_timing` directly in the response.
 
 ### Per-Node Model Configuration (Model Overrides)
 
