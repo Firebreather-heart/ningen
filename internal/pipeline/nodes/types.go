@@ -92,9 +92,9 @@ type FormattingQuirks struct {
 }
 
 type ReviewStyle struct {
-	VerbosityLevel     string `json:"verbosity_level"`
-	UseEmotionalLang   bool   `json:"use_emotional_lang"`
-	UseTechLanguage    bool   `json:"use_tech_language"`
+	VerbosityLevel   string `json:"verbosity_level"`
+	UseEmotionalLang bool   `json:"use_emotional_lang"`
+	UseTechLanguage  bool   `json:"use_tech_language"`
 }
 
 type BehavioralMarker struct {

@@ -9,8 +9,6 @@ import (
 	"ningen/internal/llm"
 )
 
-
-
 // Profiler creates a node function that extracts user behavioral patterns.
 func Profiler(model llm.LLMProvider) func(context.Context, AgentState) (AgentState, error) {
 	return func(ctx context.Context, state AgentState) (AgentState, error) {
@@ -98,9 +96,9 @@ func Profiler(model llm.LLMProvider) func(context.Context, AgentState) (AgentSta
 			UserID:              profile.UserID,
 			OverallTendency:     profile.OverallTendency,
 			ConsumerPersona:     profile.ConsumerPersona,
-			AverageRating:       calculatedAverageRating, // Calculated safely in Go
+			AverageRating:       calculatedAverageRating,  // Calculated safely in Go
 			RatingPatterns:      calculatedRatingPatterns, // Calculated safely in Go
-			ReviewLength:        calculatedReviewLength, // Calculated safely in Go
+			ReviewLength:        calculatedReviewLength,   // Calculated safely in Go
 			PreferredCategories: profile.PreferredCategories,
 			FormattingQuirks:    profile.FormattingQuirks,
 			ReviewStyle:         profile.ReviewStyle,
@@ -172,7 +170,7 @@ func buildProfilerSchema() map[string]any {
 			"formatting_quirks": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
-					"punctuation_habits":  map[string]any{"type": "string"},
+					"punctuation_habits": map[string]any{"type": "string"},
 					"capitalization_style": map[string]any{
 						"type": "string",
 						"enum": []string{"proper", "mostly_lowercase", "excessive_caps", "inconsistent"},
@@ -192,8 +190,8 @@ func buildProfilerSchema() map[string]any {
 						"type": "string",
 						"enum": []string{"terse", "concise", "verbose", "rambling"},
 					},
-					"use_emotional_lang":   map[string]any{"type": "boolean"},
-					"use_tech_language":    map[string]any{"type": "boolean"},
+					"use_emotional_lang": map[string]any{"type": "boolean"},
+					"use_tech_language":  map[string]any{"type": "boolean"},
 				},
 				"required":             []string{"verbosity_level", "use_emotional_lang", "use_tech_language"},
 				"additionalProperties": false,
@@ -246,8 +244,8 @@ func buildProfilerSchema() map[string]any {
 				},
 			},
 			"cultural_hooks": map[string]any{
-				"type":  "array",
-				"items": map[string]any{"type": "string"},
+				"type":        "array",
+				"items":       map[string]any{"type": "string"},
 				"description": "Concepts the user cares about that can be localized (e.g. 'values fast delivery', 'complains about high prices')",
 			},
 		},
