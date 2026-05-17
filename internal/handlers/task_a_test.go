@@ -115,15 +115,6 @@ func TestGenerateReviewHandler_EndToEnd(t *testing.T) {
 	if math.Abs(resp.PredictedRating-4.2) > 1e-9 {
 		t.Fatalf("unexpected rating: %v", resp.PredictedRating)
 	}
-	if resp.RatingReasoning != "- Fits the user's preferences well.\n- The price and category are a reasonable match." {
-		t.Fatalf("unexpected reasoning: %q", resp.RatingReasoning)
-	}
-	if resp.UserProfile == nil {
-		t.Fatalf("expected user profile in response")
-	}
-	if resp.UserProfile.OverallTendency != "balanced" {
-		t.Fatalf("unexpected user profile: %+v", resp.UserProfile)
-	}
 	if resp.Iterations != 2 {
 		t.Fatalf("unexpected iterations: %d", resp.Iterations)
 	}

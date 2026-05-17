@@ -20,19 +20,17 @@ type ReviewHistoryEntry = pipeline.HistoryEntry
 // ReviewTargetProduct describes the item for which a review is being generated.
 type ReviewTargetProduct = pipeline.TargetProduct
 
-// ReviewGenerationResponse is the payload returned by POST /generate_review.
+// ReviewGenerationResponse is the payload returned by POST /generate-review.
 type ReviewGenerationResponse struct {
-	GeneratedReview string             `json:"generated_review"`
-	PredictedRating float64            `json:"predicted_rating"`
-	RatingReasoning string             `json:"rating_reasoning"`
-	UserProfile     *ReviewUserProfile `json:"user_profile"`
-	Iterations      int                `json:"iterations"`
+	GeneratedReview string  `json:"generated_review"`
+	PredictedRating float64 `json:"predicted_rating"`
+	Iterations      int     `json:"iterations"`
 }
 
 // ReviewUserProfile captures the behavioral profile inferred from history.
 type ReviewUserProfile = pipeline.UserProfile
 
-// GenerateReviewHandler serves POST /generate_review.
+// GenerateReviewHandler serves POST /generate-review.
 // It runs the review workflow through the pipeline package.
 func GenerateReviewHandler(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -78,8 +76,6 @@ func GenerateReviewHandler(d *Deps) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, ReviewGenerationResponse{
 			GeneratedReview: generatedReview,
 			PredictedRating: state.PredictedRating,
-			RatingReasoning: state.RatingReasoning,
-			UserProfile:     state.UserProfile,
 			Iterations:      state.Iterations,
 		})
 	}
