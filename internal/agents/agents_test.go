@@ -16,7 +16,7 @@ type mockProvider struct {
 }
 
 func (m *mockProvider) Name() string { return "mock" }
-func (m *mockProvider) Complete(_ context.Context, _ []llm.Message) (string, error) {
+func (m *mockProvider) Complete(_ context.Context, _ []llm.Message, _ ...llm.CompletionOption) (string, error) {
 	return m.response, m.err
 }
 func (m *mockProvider) Humanize(_ context.Context, text, _ string) (string, error) {
