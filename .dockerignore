@@ -1,0 +1,40 @@
+.env
+
+# VCS and CI
+.git
+.github
+
+# Node / frontend
+node_modules
+frontend/node_modules
+frontend/.next
+
+# Python
+__pycache__
+*.pyc
+.venv
+venv
+
+# Editor/IDE
+.vscode
+.idea
+
+# macOS
+.DS_Store
+
+# Logs, temp, caches
+*.log
+tmp
+.cache
+
+# Local databases
+*.sqlite
+*.db
+
+# Local build artifacts / binaries
+api
+etl-worker
+
+# Ignore env files (keep secrets out of build context)
+.env.local
+.env.*

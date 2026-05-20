@@ -1,0 +1,61 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5434:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  embedder:
+    image: ${REGISTRY_URL}/${IMAGE_NAME}-embedder:${IMAGE_TAG}
+    ports:
+      - "127.0.0.1:8001:8000"
+    environment:
+      - MODEL_DIR=/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  etl_worker:
+    image: ${REGISTRY_URL}/${IMAGE_NAME}-etl:${IMAGE_TAG}
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      embedder:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: ${REGISTRY_URL}/${IMAGE_NAME}-api:${IMAGE_TAG}
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      embedder:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
