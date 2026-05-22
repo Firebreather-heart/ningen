@@ -5,7 +5,7 @@ import "testing"
 func TestNewGenericOpenAIClient_RequiresModel(t *testing.T) {
 	_, err := NewGenericOpenAIClient(OpenAIConfig{
 		Name:    "openai",
-		BaseURL: "https://api.openai.com/v1/chat/completions",
+		BaseURL: "https://api.openai.com/v1",
 		APIKey:  "test-key",
 	})
 	if err == nil {
@@ -16,7 +16,7 @@ func TestNewGenericOpenAIClient_RequiresModel(t *testing.T) {
 func TestNewGenericOpenAIClient_AllowsConfiguredModel(t *testing.T) {
 	client, err := NewGenericOpenAIClient(OpenAIConfig{
 		Name:    "openai",
-		BaseURL: "https://api.openai.com/v1/chat/completions",
+		BaseURL: "https://api.openai.com/v1",
 		APIKey:  "test-key",
 		Model:   "gpt-4o-mini",
 	})

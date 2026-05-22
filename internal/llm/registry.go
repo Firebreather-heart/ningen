@@ -18,7 +18,7 @@ func Build() (Registry, error) {
 	if key := os.Getenv("MOONSHOT_API_KEY"); key != "" {
 		provider, err := NewGenericOpenAIClient(OpenAIConfig{
 			Name:    "kimi",
-			BaseURL: "https://api.moonshot.ai/v1/chat/completions",
+			BaseURL: "https://api.moonshot.ai/v1",
 			APIKey:  key,
 			Model:   "kimi-k2.6", // 2026 Flagship model
 		})
@@ -36,7 +36,7 @@ func Build() (Registry, error) {
 		}
 		provider, err := NewGenericOpenAIClient(OpenAIConfig{
 			Name:    "gemini",
-			BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+			BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
 			APIKey:  key,
 			Model:   model,
 		})
@@ -77,7 +77,7 @@ func Build() (Registry, error) {
 		}
 		provider, err := NewGenericOpenAIClient(OpenAIConfig{
 			Name:    "openai",
-			BaseURL: "https://api.openai.com/v1/chat/completions",
+			BaseURL: "https://api.openai.com/v1",
 			APIKey:  key,
 			Model:   model,
 		})
