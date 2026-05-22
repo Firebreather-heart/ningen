@@ -18,6 +18,9 @@ type RecommendRequest struct {
 	// Defaults to true. Set to false to receive warm, neutral English instead.
 	// Humanization always runs — this only switches the cultural register.
 	NigerianFlavor *bool `json:"nigerian_flavor,omitempty"`
+	// DebugSkip lists pipeline stages to bypass. For ablation studies only.
+	// Valid values: "grounding", "gate", "reranker", "multi_vector"
+	DebugSkip []string `json:"debug_skip,omitempty"`
 }
 
 // RecommendedItem is a single item returned by the recommendation engine.

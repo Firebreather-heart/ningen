@@ -56,8 +56,11 @@ func main() {
 	provider := envOr("PROVIDER", "gemini")
 	nSeeds := envInt("SEEDS_PER_DOMAIN", 20)
 	gtThresh := envFloat("GT_THRESHOLD", 0.45)
+	skipStages := envOr("SKIP_STAGES", "")
+	outFile := envOr("OUT_FILE", "")
 
-	log.Printf("holdout_eval  provider=%s  seeds/domain=%d  gt_threshold=%.2f", provider, nSeeds, gtThresh)
+	log.Printf("holdout_eval  provider=%s  seeds/domain=%d  gt_threshold=%.2f  skip=%q  out=%q",
+		provider, nSeeds, gtThresh, skipStages, outFile)
 
 	// Verify API health
 	if err := checkHealth(apiURL); err != nil {
@@ -133,7 +136,7 @@ func main() {
 		}
 		fmt.Printf("  Collected %d holdout items\n", len(texts))
 
-		results := evaluateDomain(ctx, pool, embedder, apiURL, provider, texts, job.query, job.persona, gtThresh)
+		results := evaluateDomain(ctx, pool, embedder, apiURL, provider, skipStages, texts, job.query, job.persona, gtThresh)
 		printDomainReport(job.name, results)
 
 		allResults = append(allResults, results...)
@@ -184,7 +187,7 @@ func evaluateDomain(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	embedder embed.Embedder,
-	apiURL, provider string,
+	apiURL, provider, skipStages string,
 	texts []string,
 	query, personaBase string,
 	gtThresh float64,
@@ -215,7 +218,7 @@ func evaluateDomain(
 
 		// 3. Build persona + call API (with requires_input follow-through)
 		persona := fmt.Sprintf("%s. Sample of what I enjoy: %q", personaBase, truncate(text, 300))
-		ranked, err := callAPIWithFollowThrough(apiURL, provider, persona, query, text)
+		ranked, err := callAPIWithFollowThrough(apiURL, provider, skipStages, persona, query, text)
 		if err != nil || len(ranked) == 0 {
 			fmt.Println("→ API returned nothing")
 			results = append(results, seedResult{gtSize: len(gt)})
@@ -263,10 +266,10 @@ func findGT(ctx context.Context, pool *pgxpool.Pool, vec []float32, threshold fl
 // callAPIWithFollowThrough calls POST /recommend and handles requires_input gracefully.
 // When the API asks a clarifying question, it synthesizes an answer from the seed text
 // and fires a second request — simulating a real user responding to the question.
-func callAPIWithFollowThrough(apiURL, provider, persona, query, seedText string) ([]string, error) {
+func callAPIWithFollowThrough(apiURL, provider, skipStages, persona, query, seedText string) ([]string, error) {
 	history := []map[string]string{{"role": "user", "content": query}}
 
-	ids, requiresInput, question, err := callRecommend(apiURL, provider, persona, history)
+	ids, requiresInput, question, err := callRecommend(apiURL, provider, skipStages, persona, history)
 	if err != nil {
 		return nil, err
 	}
@@ -282,20 +285,32 @@ func callAPIWithFollowThrough(apiURL, provider, persona, query, seedText string)
 		map[string]string{"role": "user", "content": answer},
 	)
 
-	ids, _, _, err = callRecommend(apiURL, provider, persona, history)
+	ids, _, _, err = callRecommend(apiURL, provider, skipStages, persona, history)
 	return ids, err
 }
 
 // callRecommend sends one POST /recommend. Returns (item_ids, requiresInput, question, err).
 var httpClient = &http.Client{Timeout: 120 * time.Second}
 
-func callRecommend(apiURL, provider, persona string, history []map[string]string) ([]string, bool, string, error) {
-	body, _ := json.Marshal(map[string]any{
+func callRecommend(apiURL, provider, skipStages, persona string, history []map[string]string) ([]string, bool, string, error) {
+	payload := map[string]any{
 		"user_persona": persona,
 		"history":      history,
 		"limit":        topK,
 		"provider":     provider,
-	})
+	}
+	if skipStages != "" {
+		var stages []string
+		for _, s := range strings.Split(skipStages, ",") {
+			if t := strings.TrimSpace(s); t != "" {
+				stages = append(stages, t)
+			}
+		}
+		if len(stages) > 0 {
+			payload["debug_skip"] = stages
+		}
+	}
+	body, _ := json.Marshal(payload)
 	resp, err := httpClient.Post(apiURL+"/recommend", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, false, "", err

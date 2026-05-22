@@ -73,6 +73,11 @@ func RecommendHandler(d *Deps) http.HandlerFunc {
 
 		nigerian := req.NigerianFlavor == nil || *req.NigerianFlavor
 
+		skip := make(map[string]bool, len(req.DebugSkip))
+		for _, s := range req.DebugSkip {
+			skip[s] = true
+		}
+
 		// Cold-start gate: no history means no intent signal at all.
 		if len(req.History) == 0 {
 			question := humanizeText(ctx, provider,
@@ -92,9 +97,12 @@ func RecommendHandler(d *Deps) http.HandlerFunc {
 		// Pre-search: embed the raw last user turn to sample corpus examples.
 		// These ground the Extractor in what actually exists in the DB before it
 		// generates search queries, preventing queries for items that don't exist.
-		sampleCtx, sampleCancel := context.WithTimeout(ctx, agentTimeout)
-		corpusExamples := sampleCorpus(sampleCtx, d, req.History)
-		sampleCancel()
+		var corpusExamples []agents.CorpusExample
+		if !skip["grounding"] {
+			sampleCtx, sampleCancel := context.WithTimeout(ctx, agentTimeout)
+			corpusExamples = sampleCorpus(sampleCtx, d, req.History)
+			sampleCancel()
+		}
 
 		// Stage 1 — Signal Extraction (corpus-aware)
 		extractCtx, extractCancel := context.WithTimeout(ctx, agentTimeout)
@@ -116,6 +124,9 @@ func RecommendHandler(d *Deps) http.HandlerFunc {
 		}
 
 		// Stage 2 — Multi-vector Retrieval
+		if skip["multi_vector"] && len(signal.SearchQueries) > 1 {
+			signal.SearchQueries = signal.SearchQueries[:1]
+		}
 		candidates, err := retrieveBySignal(ctx, d, signal, candidatePoolSize)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "retrieval failed: "+err.Error())
@@ -123,32 +134,51 @@ func RecommendHandler(d *Deps) http.HandlerFunc {
 		}
 
 		// Stage 3 — Quality Gate
-		gateCtx, gateCancel := context.WithTimeout(ctx, agentTimeout)
-		gateResult, err := agents.NewGate(provider).Evaluate(gateCtx, signal, candidates)
-		gateCancel()
-		if err == nil {
-			switch gateResult.Decision {
-			case agents.GateAsk:
-				raw := gateResult.Question
-				if raw == "" {
-					raw = fallbackClarifyQ
-				}
-				question := humanizeText(ctx, provider, raw, req.UserPersona, nigerian)
-				writeJSON(w, http.StatusOK, models.RecommendResponse{RequiresInput: true, Question: question})
-				return
-			case agents.GateRefine:
-				if len(gateResult.RefinedQueries) > 0 {
-					signal.SearchQueries = gateResult.RefinedQueries
-					if refined, refineErr := retrieveBySignal(ctx, d, signal, candidatePoolSize); refineErr != nil || len(refined) == 0 {
-						log.Printf("gate REFINE retrieval failed (keeping original): %v", refineErr)
-					} else {
-						candidates = refined
+		if !skip["gate"] {
+			gateCtx, gateCancel := context.WithTimeout(ctx, agentTimeout)
+			gateResult, err := agents.NewGate(provider).Evaluate(gateCtx, signal, candidates)
+			gateCancel()
+			if err == nil {
+				switch gateResult.Decision {
+				case agents.GateAsk:
+					raw := gateResult.Question
+					if raw == "" {
+						raw = fallbackClarifyQ
+					}
+					question := humanizeText(ctx, provider, raw, req.UserPersona, nigerian)
+					writeJSON(w, http.StatusOK, models.RecommendResponse{RequiresInput: true, Question: question})
+					return
+				case agents.GateRefine:
+					if len(gateResult.RefinedQueries) > 0 {
+						signal.SearchQueries = gateResult.RefinedQueries
+						if refined, refineErr := retrieveBySignal(ctx, d, signal, candidatePoolSize); refineErr != nil || len(refined) == 0 {
+							log.Printf("gate REFINE retrieval failed (keeping original): %v", refineErr)
+						} else {
+							candidates = refined
+						}
 					}
 				}
 			}
 		}
 
 		// Stage 4 — Psychographic Reranking (cap pool at 20 to bound LLM output size)
+		if skip["reranker"] {
+			items := make([]models.RecommendedItem, 0, limit)
+			for i, c := range candidates {
+				if i >= limit {
+					break
+				}
+				items = append(items, models.RecommendedItem{
+					ItemID:     c.ItemID,
+					Domain:     c.Domain,
+					SearchText: c.SearchText,
+					Score:      c.Score,
+				})
+			}
+			writeJSON(w, http.StatusOK, models.RecommendResponse{Recommendations: items})
+			return
+		}
+
 		rerankerPool := candidates
 		if len(rerankerPool) > 20 {
 			rerankerPool = rerankerPool[:20]
